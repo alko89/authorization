@@ -171,7 +171,11 @@ describe('AuthorizationGuard', () => {
       .canActivate(httpContext(SteppingController, SteppingController.prototype.guarded, users.alice))
       .catch((e: unknown) => e)) as HttpException;
 
-    expect(error.getResponse()).toEqual({ message: 'Forbidden', statusCode: 403 });
+    expect(error.getResponse()).toEqual({
+      message: 'Forbidden',
+      statusCode: 403,
+      errorCode: 'forbidden'
+    });
     expect(error.cause).toBeInstanceOf(AuthorizationError);
     expect(error.cause).toMatchObject({ policy: 'SteppingPolicy', ability: 'second', reason: 'forbidden' });
   });
@@ -435,7 +439,12 @@ describe('toTransportError', () => {
     const error = await toTransportError(contextOf('ws'), guest);
 
     expect(error).toBeInstanceOf(WsException);
-    expect((error as WsException).getError()).toEqual({ status: 'error', message: 'Unauthorized', statusCode: 401 });
+    expect((error as WsException).getError()).toEqual({
+      status: 'error',
+      message: 'Unauthorized',
+      statusCode: 401,
+      errorCode: 'unauthenticated',
+    });
     expect(error.cause).toBe(guest);
   });
 
@@ -450,7 +459,11 @@ describe('toTransportError', () => {
     const error = await toTransportError(contextOf('kafka-custom'), forbidden);
 
     expect(error).toBeInstanceOf(ForbiddenException);
-    expect((error as HttpException).getResponse()).toEqual({ message: 'Forbidden', statusCode: 403 });
+    expect((error as HttpException).getResponse()).toEqual({
+      message: 'Forbidden',
+      statusCode: 403,
+      errorCode: 'forbidden'
+    });
   });
 });
 
@@ -493,7 +506,12 @@ describe('AuthorizationErrorInterceptor', () => {
     ).catch((e: unknown) => e);
 
     expect(mapped).toBeInstanceOf(WsException);
-    expect((mapped as WsException).getError()).toEqual({ status: 'error', message: 'Forbidden', statusCode: 403 });
+    expect((mapped as WsException).getError()).toEqual({
+      status: 'error',
+      message: 'Forbidden',
+      statusCode: 403,
+      errorCode: 'forbidden',
+    });
   });
 });
 

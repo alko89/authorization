@@ -4,8 +4,8 @@ import { adapters, createApp } from './support/adapters.js';
 import { AuthorizationEvents, type AuthorizationDeniedEvent } from '../lib/index.js';
 import { AppModule, MisconfiguredAppModule, users } from './fixtures.js';
 
-const UNAUTHORIZED = { message: 'Unauthorized', statusCode: 401 };
-const FORBIDDEN = { message: 'Forbidden', statusCode: 403 };
+const UNAUTHORIZED = { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' };
+const FORBIDDEN = { message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' };
 
 describe.each(adapters.map((a) => a.name))('authorization e2e (%s)', (adapter) => {
   let app: INestApplication;

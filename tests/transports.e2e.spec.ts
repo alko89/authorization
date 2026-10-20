@@ -119,12 +119,12 @@ describe('WebSocket gateway (platform-ws)', () => {
 
     expect(await ask('eve', 'create')).toEqual({
       event: 'exception',
-      data: { status: 'error', message: 'Forbidden', statusCode: 403 },
+      data: { status: 'error', message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' },
     });
 
     expect(await ask(undefined, 'create')).toEqual({
       event: 'exception',
-      data: { status: 'error', message: 'Unauthorized', statusCode: 401 },
+      data: { status: 'error', message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
     });
   });
 
@@ -132,17 +132,19 @@ describe('WebSocket gateway (platform-ws)', () => {
     expect(await ask('bob', 'draft')).toEqual({ event: 'draft', data: 'Bob drafts' });
     expect(await ask('alice', 'draft')).toEqual({
       event: 'exception',
-      data: { status: 'error', message: 'Forbidden', statusCode: 403 },
+      data: { status: 'error', message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' },
     });
   });
 
   it("carries the body of Nest's own ForbiddenException, after the ws filter's status", async () => {
     expect(await send('eve', 'create')).toBe(
-      '{"event":"exception","data":{"status":"error","message":"Forbidden","statusCode":403}}',
+      '{"event":"exception","data":{"status":"error","message":"Forbidden","statusCode":403,"errorCode":"forbidden"}}',
     );
     const { data } = (await ask('eve', 'create')) as { data: Record<string, unknown> };
     const { status: _, ...body } = data;
-    expect(JSON.stringify(body)).toBe(JSON.stringify(new ForbiddenException().getResponse()));
+    expect(JSON.stringify(body)).toBe(
+      JSON.stringify(new ForbiddenException(undefined, { errorCode: 'forbidden' }).getResponse()),
+    );
   });
 });
 
@@ -246,7 +248,10 @@ describe('WebSocket gateway behind per-message authentication (platform-ws)', ()
     const next = () => (replies.length ? Promise.resolve(replies.shift()) : new Promise((resolve) => waiting.push(resolve)));
     return { send, next, ask: (event: string, data?: object) => (send(event, data), next()) };
   };
-  const unauthenticated = { event: 'exception', data: { status: 'error', message: 'Unauthorized', statusCode: 401 } };
+  const unauthenticated = {
+    event: 'exception',
+    data: { status: 'error', message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+  };
 
   beforeAll(async () => {
     app = await createApp('express', RoomsAppModule, { setup: (a) => void a.useWebSocketAdapter(new WsAdapter(a)) });
@@ -349,19 +354,28 @@ describe('GraphQL (Apollo, express)', () => {
 
     expect((await gql('{ create }', 'eve').expect(200)).body.errors[0]).toMatchObject({
       message: 'Forbidden',
-      extensions: { code: 'FORBIDDEN' },
+      extensions: {
+        code: 'FORBIDDEN',
+        originalError: { message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' },
+      },
     });
 
     expect((await gql('{ create }').expect(200)).body.errors[0]).toMatchObject({
       message: 'Unauthorized',
-      extensions: { code: 'UNAUTHENTICATED' },
+      extensions: {
+        code: 'UNAUTHENTICATED',
+        originalError: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+      },
     });
   });
 
   it('authorize() denials in a service carry the same code', async () => {
     expect((await gql('{ draft }').expect(200)).body.errors[0]).toMatchObject({
       message: 'Unauthorized',
-      extensions: { code: 'UNAUTHENTICATED' },
+      extensions: {
+        code: 'UNAUTHENTICATED',
+        originalError: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+      },
     });
   });
 });
@@ -634,18 +648,18 @@ describe('microservice handlers (rpc)', () => {
     expect(await guard.canActivate(rpcContext(users.alice))).toBe(true);
     const error = await guard.canActivate(rpcContext(users.eve)).catch((e) => e);
     expect(error).toBeInstanceOf(RpcException);
-    expect(error.getError()).toEqual({ message: 'Forbidden', statusCode: 403 });
+    expect(error.getError()).toEqual({ message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' });
     expect(error.cause).toMatchObject({ reason: 'forbidden', policy: 'PostPolicy', ability: 'create' });
   });
 
   it("carries the bodies of Nest's own UnauthorizedException and ForbiddenException, as over HTTP", async () => {
     const forbidden = (await guard.canActivate(rpcContext(users.eve)).catch((e) => e)) as RpcException;
-    expect(JSON.stringify(forbidden.getError())).toBe('{"message":"Forbidden","statusCode":403}');
-    expect(forbidden.getError()).toEqual(new ForbiddenException().getResponse());
+    expect(JSON.stringify(forbidden.getError())).toBe('{"message":"Forbidden","statusCode":403,"errorCode":"forbidden"}');
+    expect(forbidden.getError()).toEqual(new ForbiddenException(undefined, { errorCode: 'forbidden' }).getResponse());
 
     const guest = (await guard.canActivate(rpcContext(null)).catch((e) => e)) as RpcException;
-    expect(JSON.stringify(guest.getError())).toBe('{"message":"Unauthorized","statusCode":401}');
-    expect(guest.getError()).toEqual(new UnauthorizedException().getResponse());
+    expect(JSON.stringify(guest.getError())).toBe('{"message":"Unauthorized","statusCode":401,"errorCode":"unauthenticated"}');
+    expect(guest.getError()).toEqual(new UnauthorizedException(undefined, { errorCode: 'unauthenticated' }).getResponse());
   });
 
   it('an AuthorizationError leaving the handler becomes the same RpcException', async () => {
@@ -655,7 +669,7 @@ describe('microservice handlers (rpc)', () => {
     });
     const error = await lastValueFrom(result).catch((e: RpcException) => e);
     expect(error).toBeInstanceOf(RpcException);
-    expect((error as RpcException).getError()).toEqual({ message: 'Unauthorized', statusCode: 401 });
+    expect((error as RpcException).getError()).toEqual({ message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' });
   });
 
   it('leaves other errors alone', async () => {
@@ -739,19 +753,21 @@ describe('microservice over TCP (a real transport)', () => {
   it('@Can() reads the user the authentication guard left on the transport context', async () => {
     expect(await send('refunds.approve', { orderId: 3, token: 'finance-token' })).toEqual({ reply: { approved: 3 } });
     expect(await send('refunds.approve', { orderId: 3 })).toEqual({
-      error: { message: 'Unauthorized', statusCode: 401 },
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
     });
   });
 
   it('never takes the user from the message payload, which the producer writes', async () => {
     const admin = { id: 1, roles: ['admin', 'finance'] };
     expect(await send('refunds.approve', { orderId: 3, user: admin })).toEqual({
-      error: { message: 'Unauthorized', statusCode: 401 },
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
     });
   });
 
   it('authorize() denials in a service reach the client in the same shape', async () => {
-    expect(await send('drafts.show', {})).toEqual({ error: { message: 'Unauthorized', statusCode: 401 } });
+    expect(await send('drafts.show', {})).toEqual({
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+    });
   });
 });
 
@@ -802,7 +818,9 @@ describe('hybrid app (HTTP plus a connected microservice)', () => {
   // Nest gives a connected microservice the app's global enhancers (APP_GUARD
   // included) only with inheritAppConfig: true. The README says so.
   it('enforces @Can() on message handlers with inheritAppConfig: true, and only then', async () => {
-    expect(await guestCall(true)).toEqual({ error: { message: 'Unauthorized', statusCode: 401 } });
+    expect(await guestCall(true)).toEqual({
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+    });
     expect(await guestCall(false)).toEqual({ reply: 'approved' });
   });
 });

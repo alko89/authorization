@@ -129,7 +129,9 @@ describe('hybrid app: authorize() in message handlers', () => {
 
   it('maps a service denial to an RpcException with inheritAppConfig: true', async () => {
     running = await hybrid(HybridAppModule, true);
-    expect(await send(running.client, 'refunds.show')).toEqual({ error: { message: 'Unauthorized', statusCode: 401 } });
+    expect(await send(running.client, 'refunds.show')).toEqual({
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+    });
   });
 
   it('leaves it to the rpc filter without inheritAppConfig, which reports "Internal server error"', async () => {
@@ -163,8 +165,12 @@ describe('hybrid app: a getUser that trusts a gateway-verified user in RPC paylo
 
   it('reads the user from the message payload over RPC', async () => {
     expect(await send(running.client, 'refunds.approve', { user: finance })).toEqual({ reply: 'approved' });
-    expect(await send(running.client, 'refunds.approve', { user: users.alice })).toEqual({ error: { message: 'Forbidden', statusCode: 403 } });
-    expect(await send(running.client, 'refunds.approve')).toEqual({ error: { message: 'Unauthorized', statusCode: 401 } });
+    expect(await send(running.client, 'refunds.approve', { user: users.alice })).toEqual({
+      error: { message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' },
+    });
+    expect(await send(running.client, 'refunds.approve')).toEqual({
+      error: { message: 'Unauthorized', statusCode: 401, errorCode: 'unauthenticated' },
+    });
   });
 
   it('delegates HTTP to defaultGetUser, which reads request.user and never a payload', async () => {

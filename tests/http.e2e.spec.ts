@@ -140,7 +140,11 @@ describe.each(adapters.map((a) => a.name))('HTTP denials and failures (%s)', (ad
   });
 
   it('answers 401 when a @Can() ability dereferences a guest, and still checks signed-in users', async () => {
-    await request(app.getHttpServer()).get('/reports/view').expect(401, { message: 'Unauthorized', statusCode: 401 });
+    await request(app.getHttpServer()).get('/reports/view').expect(401, {
+      message: 'Unauthorized',
+      statusCode: 401,
+      errorCode: 'unauthenticated',
+    });
     await request(app.getHttpServer()).get('/reports/view').set('x-user', 'alice').expect(403);
     await request(app.getHttpServer()).get('/reports/view').set('x-user', 'eve').expect(200, { views: 1 });
   });
@@ -170,11 +174,15 @@ describe.each(adapters.map((a) => a.name))('HTTP denials and failures (%s)', (ad
   });
 
   it('denies a route that declares no check, and names it at startup', async () => {
-    await request(app.getHttpServer()).get('/reports/forgotten').expect(401, { message: 'Unauthorized', statusCode: 401 });
+    await request(app.getHttpServer()).get('/reports/forgotten').expect(401, {
+      message: 'Unauthorized',
+      statusCode: 401,
+      errorCode: 'unauthenticated',
+    });
     await request(app.getHttpServer())
       .get('/reports/forgotten')
       .set('x-user', 'root')
-      .expect(403, { message: 'Forbidden', statusCode: 403 });
+      .expect(403, { message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' });
 
     expect(logged.map(({ cause }) => cause)).toEqual([
       expect.objectContaining({ reason: 'unauthenticated', policy: null, ability: null }),

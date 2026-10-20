@@ -23,13 +23,13 @@ function load(pkg: '@nestjs/websockets' | '@nestjs/microservices', name: string)
  * The one place a denial becomes a response. `@Can()` (in the guard) and
  * `authorize()` (an `AuthorizationError` leaving a handler) both come here.
  * Every transport gets the body of Nest's own `UnauthorizedException` or
- * `ForbiddenException`, like any other 401 or 403:
+ * `ForbiddenException`, with the denial reason as `errorCode`:
  *
  * | Context | Error | Client sees |
  * | --- | --- | --- |
- * | `http`, `graphql` | `UnauthorizedException` / `ForbiddenException` | `{"message":"Forbidden","statusCode":403}`, or the `UNAUTHENTICATED` / `FORBIDDEN` code |
- * | `ws` | `WsException` | `{ status: 'error', message: 'Forbidden', statusCode: 403 }` |
- * | `rpc` | `RpcException` | `{ message: 'Forbidden', statusCode: 403 }` |
+ * | `http`, `graphql` | `UnauthorizedException` / `ForbiddenException` | `{"message":"Forbidden","statusCode":403,"errorCode":"forbidden"}`; GraphQL keeps its `UNAUTHENTICATED` / `FORBIDDEN` code |
+ * | `ws` | `WsException` | `{ status: 'error', message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' }` |
+ * | `rpc` | `RpcException` | `{ message: 'Forbidden', statusCode: 403, errorCode: 'forbidden' }` |
  *
  * The ws and rpc filters report `HttpException`s as "Internal server error",
  * hence their own classes, loaded only when those packages are installed.
@@ -38,8 +38,8 @@ function load(pkg: '@nestjs/websockets' | '@nestjs/microservices', name: string)
 export async function toTransportError(context: ExecutionContext, denial: AuthorizationError): Promise<Error> {
   const exception =
     denial.reason === 'unauthenticated'
-      ? new UnauthorizedException(undefined, { cause: denial })
-      : new ForbiddenException(undefined, { cause: denial });
+      ? new UnauthorizedException(undefined, { cause: denial, errorCode: denial.reason })
+      : new ForbiddenException(undefined, { cause: denial, errorCode: denial.reason });
   const body = exception.getResponse() as object;
 
   switch (context.getType<string>()) {

@@ -84,8 +84,16 @@ describe.each(adapters.map((a) => a.name))('with @nestjs/resilience (%s)', (adap
     });
 
     it('answers a denial once, with its own status: no retry, no fallback', async () => {
-      await http().get('/reports/backup').query({ user: 'alice' }).expect(403, { message: 'Forbidden', statusCode: 403 });
-      await http().get('/reports/backup').expect(401, { message: 'Unauthorized', statusCode: 401 });
+      await http().get('/reports/backup').query({ user: 'alice' }).expect(403, {
+        message: 'Forbidden',
+        statusCode: 403,
+        errorCode: 'forbidden',
+      });
+      await http().get('/reports/backup').expect(401, {
+        message: 'Unauthorized',
+        statusCode: 401,
+        errorCode: 'unauthenticated',
+      });
 
       expect(app.get(ReportsService).calls).toBe(2);
       expect(events).toEqual([]);
